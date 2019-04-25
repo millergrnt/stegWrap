@@ -147,9 +147,11 @@ def main():
 
 		# Create thread pool and password queue
 		q = Queue()
+		threadPool = []
 		for i in range(multiprocessing.cpu_count()):
 			t = threading.Thread(target=worker, args=(inImage, verbose, bruteForce, q))
 			t.start()
+			threadPool.append(t)
 
 		if bruteForce:
 
@@ -183,6 +185,11 @@ def main():
 				for password in wordlist:
 					password = password.strip()
 					q.put(password)
+
+		
+		# Join on the threads
+		for thread in threadPool:
+			thread.join()
 
 		# If cracked flag set, print the cracked password
 		if passCracked:
