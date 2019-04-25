@@ -6,59 +6,62 @@
 # Date: 4 April 2019
 
 
-import getopt, sys, subprocess, os.path
+# Import section
+import getopt, sys, subprocess, os.path, threading, multiprocessing
 from subprocess import PIPE
+from queue import Queue
+
+passCracked = False
+crackedPassword = ""
+lock = threading.Lock()
 
 
-def crackBruteForce(inImage, minLen, maxLen, verbose, useSymbols):
-	print(f"Cracking: {inImage}")
-	chars = list("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-	symbolChars = list("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()'\"/?.")
+# Does the BruteForce cracking
+def attemptCrack(inImage, verbose, passAttempt):
+	if verbose:
 
-	if not verbose:
-		print("\tThis will take some time, I promise it is working")
+		# Obtain stdout lock and print
+		with lock:
+			print(f"\tAttempting password: {passAttempt}")
 
-	wordlist = [""]
-	while len(wordlist[0]) <= maxLen:
+		# Spawn the steghide process and wait for the result
+		process = subprocess.Popen(["steghide", "extract", "-sf", inImage, "-p", passAttempt, "-xf", inImage + ".out"], stdin=PIPE, stdout=PIPE, stderr=subprocess.STDOUT)
+		out = (process.communicate()[0]).decode()
 
-		if len(wordlist[0]) >= minLen:
-			for password in wordlist:
-				if verbose:
-					print(f"\tAttempting password: {password}")
-					process = subprocess.Popen(["steghide", "extract", "-sf", inImage, "-p", password, "-xf", inImage + ".out"], stdin=PIPE, stdout=PIPE, stderr=subprocess.STDOUT)
-					out = (process.communicate()[0]).decode()
-					if not "could not extract" in out:
-						return True, password
-				else:
-					process = subprocess.Popen(["steghide", "extract", "-sf", inImage, "-p", password, "-xf", inImage + ".out"], stdin=PIPE, stdout=PIPE, stderr=subprocess.STDOUT)
-					out = (process.communicate()[0]).decode()
-					if not "could not extract" in out:
-						return True, password
-		if not useSymbols:
-			wordlist = [''.join((orig, newchar)) for orig in wordlist for newchar in chars]
-		else:
-			wordlist = [''.join((orig, newchar)) for orig in wordlist for newchar in symbolChars]
-	return False, ""
+		# If steghide does not tell us it could not extract, the passAttempt
+		# was found
+		if not "could not extract" in out:
+			return True, passAttempt
+	else:
 
-def crackWordlist(inImage, wordlist, verbose):
-	print(f"Cracking: {inImage}")
-	with open(wordlist, "r") as wordlist:
-		for password in wordlist:
-			password = password.strip()
-			if verbose:
-				print(f"\tAttempting password: {password}")
-				process = subprocess.Popen(["steghide", "extract", "-sf", inImage, "-p", password, "-xf", inImage + ".out"], stdin=PIPE, stdout=PIPE, stderr=subprocess.STDOUT)
-				out = (process.communicate()[0]).decode()
-				if not "could not extract" in out:
-					return True, password
-			else:
-				process = subprocess.Popen(["steghide", "extract", "-sf", inImage, "-p", password, "-xf", inImage + ".out"], stdin=PIPE, stdout=PIPE, stderr=subprocess.STDOUT)
-				out = (process.communicate()[0]).decode()
-				if not "could not extract" in out:
-					return True, password
+		# Spawn the steghide process and wait for the result
+		process = subprocess.Popen(["steghide", "extract", "-sf", inImage, "-p", passAttempt, "-xf", inImage + ".out"], stdin=PIPE, stdout=PIPE, stderr=subprocess.STDOUT)
+		out = (process.communicate()[0]).decode()
+
+		# If steghide does not tell us it could not extract, the passAttempt
+		# was found
+		if not "could not extract" in out:
+			return True, passAttempt
 
 	return False, ""
 
+
+# Tells each worker what to do
+def worker(inImage, verbose, bruteForce, q):
+
+	global passCracked
+
+	# until one of the threads cracks the password keep going
+	while not passCracked:
+		passAttempt = q.get()
+		cracked, password = attemptCrack(inImage, verbose, passAttempt)
+
+		# Check if attemptCrack successfully cracked the password
+		if cracked == True:
+			with lock:
+				print(f"\t[*] Password for {inImage}: {password}")
+			passCracked = True
+		q.task_done()
 
 # Prints the usage message
 def usage():
@@ -80,6 +83,7 @@ def usage():
 # Main function of the program
 def main():
 
+	# If no arguments are supplied, print the usage
 	if len(sys.argv[1:]) == 0:
 		usage()
 		sys.exit()
@@ -92,6 +96,7 @@ def main():
 		usage()
 		sys.exit(2)
 
+	# Set defaults
 	wordlist = "top100passwords.txt"
 	inputImage = ""
 	verbose = False
@@ -126,24 +131,67 @@ def main():
 		else:
 			print(f"Unknown option provided: {opt}")
 
+	# Make sure at least one image is found
 	if len(args) < 1:
 		print("An input image must be supplied")
 
+	# Attempt to crack each image's password
 	for inImage in args:
 
+		print(f"Cracking: {inImage}")
+
+		# Make sure supplied images are actually on the system
 		if not os.path.isfile(inImage):
 			print(f"[!] {inImage} is not a file on this system")
 			continue
 
-		if not bruteForce:
-			cracked, password = crackWordlist(inImage, wordlist, verbose)
-		else:
-			cracked, password = crackBruteForce(inImage, minimumPassLen, maximumPassLen, verbose, useSymbols)
+		# Create thread pool and password queue
+		q = Queue()
+		for i in range(multiprocessing.cpu_count()):
+			t = threading.Thread(target=worker, args=(inImage, verbose, bruteForce, q))
+			t.start()
 
-		if cracked:
-			print(f"\t[*] Password for {inImage}: {password}")
+		if bruteForce:
+
+			# Create the character creation list
+			chars = list("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+			symbolChars = list("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()'\"/?.")
+
+			# Create the potential password wordlist
+			wordlist = [""]
+			while len(wordlist[0]) <= maximumPassLen and not passCracked:
+
+				# If the newly created list is the correct length add it
+				# to the potential password queue
+				if len(wordlist[0]) >= minimumPassLen:
+					for password in wordlist:
+						q.put(password)
+
+				# Don't waste a massive amount of time creating an extra list
+				if len(wordlist[0]) < maximumPassLen:
+
+					# Create the next potential list
+					if not useSymbols:
+						wordlist = [''.join((orig, newchar)) for orig in wordlist for newchar in chars]
+					else:
+						wordlist = [''.join((orig, newchar)) for orig in wordlist for newchar in symbolChars]
+
+		else:
+
+			# For passowrd in the wordlist, add it to the queue
+			with open(wordlist, "r") as wordlist:
+				for password in wordlist:
+					password = password.strip()
+					q.put(password)
+
+		# If cracked flag set, print the cracked password
+		if passCracked:
+			print(f"\t[*] Password for {inImage}: {crackedPassword}")
 		else:
 			print(f"\t[!] Password for {inImage}: not found")
+
+		# Reset cracked flag
+		cracked = False
 
 if __name__ == '__main__':
 	main()
