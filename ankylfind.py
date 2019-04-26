@@ -147,8 +147,10 @@ def main():
 
 		# Create thread pool and password queue
 		q = Queue()
+
+		# Create 3 threads per logical core because this program is mainly IO bound
 		threadPool = []
-		for i in range(multiprocessing.cpu_count()):
+		for i in range(multiprocessing.cpu_count() * 3):
 			t = threading.Thread(target=worker, args=(inImage, verbose, bruteForce, q))
 			t.start()
 			threadPool.append(t)
