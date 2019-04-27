@@ -139,6 +139,9 @@ class Page1(Page):
             password = ""
             if len(self.passwordTxt.get(0.0, tk.END)) > 2 :
                 password = self.passwordTxt.get(0.0, tk.END)[:-1]
+            else:
+                self.text.insert(tk.END, "Input Password must be of length 0..64 characters")
+                return
             if len(password) < 65:
                 pass
             else:
@@ -173,8 +176,8 @@ class Page1(Page):
             self.text.insert(tk.END, out)
             
             
-            print("the commandline is {}".format(process.args))
-            print(out)
+            # print("the commandline is {}".format(process.args))
+            # print(out)
 
             self.text.see("end")
 
@@ -200,11 +203,13 @@ class Page1(Page):
                 self.text.insert(tk.END, " .JPEG compressed photos")
                 return
             ###
-            self.text.insert(tk.END, "Valid Input Filename")
 
             password = ""
             if len(self.passwordTxt.get(0.0, tk.END)) > 2 :
                 password = self.passwordTxt.get(0.0, tk.END)[:-1]
+            else:
+                self.text.insert(tk.END, "Input Password must be of length 0..64 characters")
+                return
             if len(password) < 65:
                 pass
             else:
@@ -218,17 +223,48 @@ class Page1(Page):
                 return
 
 
+            filename = ""
+            if len(self.nameOutputFileTxt.get(0.0, tk.END)) == 1: #if file is 0, set default filename and run extract
+                filename = "stegOut.txt"
+            else:
+                filename = self.nameOutputFileTxt.get(0.0, tk.END)[:-1]
+            if len(filename) < 65:
+                pass
+            else:
+                self.text.insert(tk.END, "Input File must be of length 0..64 characters")
+                return
+            filenametemp = "".join(c for c in filename if c in valid_chars)
+            print("---")
+            print(filename)
+            print(filenametemp)
+            if filename == filenametemp:
+                pass
+            else:
+                self.text.insert(tk.END, "Input Filename must only contain '{}'".format(valid_chars))
+                return
+
+
             self.text.see("end")
             process = subprocess.Popen(["steghide", "--extract", "-v", "-sf", self.InputImageTxt, "-p", password], stdin=PIPE, stdout=PIPE, stderr=subprocess.STDOUT)
             out = (process.communicate()[0]).decode()
-
+            if "specify a file name" in out:
+                
+                exists = os.path.isfile(fileOut)
+                if exists:
+                    os.remove(fileOut)
+                    self.text.insert(tk.END, "Old {} removed!\n".format(fileOut))
+                self.text.insert(tk.END, "An output filename was required the data contained in this image.\n")
+                self.text.insert(tk.END, "Autonamed to stegOut.txt\n")
+                process = subprocess.Popen(["steghide", "--extract", "-v", "-sf", self.InputImageTxt, "-xf", filename, "-p", password], stdin=PIPE, stdout=PIPE, stderr=subprocess.STDOUT)
+                out = (process.communicate()[0]).decode()
+            self.text.insert(tk.END, out)
         
         
-            filename = self.nameOutputFileTxt.get(0.0, tk.END)
-            fileOut = "".join(c for c in filename if c in valid_chars)
-            if len(fileOut) == 0:
-                fileOut = "stegWrap.{}".format(extension)
-            print("Filename = '{}'".format(fileOut))
+            # filename = self.nameOutputFileTxt.get(0.0, tk.END)
+            # fileOut = "".join(c for c in filename if c in valid_chars)
+            # if len(fileOut) == 0:
+            #     fileOut = "stegWrap.{}".format(extension)
+            # print("Filename = '{}'".format(fileOut))
 
             self.text.see("end")
         
@@ -245,20 +281,20 @@ class Page1(Page):
 class Page2(Page):
     def __init__(self, *args, **kwargs):
         Page.__init__(self, *args, **kwargs)
-        label = tk.Label(self, text="This is page 2")
+        label = tk.Label(self, text="No Options Implemented")
         label.pack(side="top", fill="both", expand=True)
 
-class Page3(Page):
-    def __init__(self, *args, **kwargs):
-        Page.__init__(self, *args, **kwargs)
-        label = tk.Label(self, text="This is page 3")
-        label.pack(side="top", fill="both", expand=True)
+# class Page3(Page):
+#     def __init__(self, *args, **kwargs):
+#         Page.__init__(self, *args, **kwargs)
+#         label = tk.Label(self, text="This is page 3")
+#         label.pack(side="top", fill="both", expand=True)
 
-class Page4(Page):
-    def __init__(self, *args, **kwargs):
-        Page.__init__(self, *args, **kwargs)
-        label = tk.Label(self, text="This is page 4")
-        label.pack(side="top", fill="both", expand=True)
+# class Page4(Page):
+#     def __init__(self, *args, **kwargs):
+#         Page.__init__(self, *args, **kwargs)
+#         label = tk.Label(self, text="This is page 4")
+#         label.pack(side="top", fill="both", expand=True)
 
 buttonframe = ""
 container = ""
@@ -268,8 +304,8 @@ class MainView(tk.Frame):
         tk.Frame.__init__(self, *args, **kwargs)
         p1 = Page1(self)
         p2 = Page2(self)
-        p3 = Page3(self)
-        p4 = Page4(self)
+        # p3 = Page3(self)
+        # p4 = Page4(self)
 
         global buttonframe
         global container
@@ -281,18 +317,18 @@ class MainView(tk.Frame):
 
         p1.place(in_=container, x=0, y=0, relwidth=1, relheight=1)
         p2.place(in_=container, x=0, y=0, relwidth=1, relheight=1)
-        p3.place(in_=container, x=0, y=0, relwidth=1, relheight=1)
-        p4.place(in_=container, x=0, y=0, relwidth=1, relheight=1)
+        # p3.place(in_=container, x=0, y=0, relwidth=1, relheight=1)
+        # p4.place(in_=container, x=0, y=0, relwidth=1, relheight=1)
 
         b1 = tk.Button(buttonframe, text="File Processing", command=p1.lift)
         b2 = tk.Button(buttonframe, text="Steghide Options", command=p2.lift)
-        b3 = tk.Button(buttonframe, text="Page 3", command=p3.lift)
-        b4 = tk.Button(buttonframe, text="Page 4", command=p4.lift)
+        # b3 = tk.Button(buttonframe, text="Page 3", command=p3.lift)
+        # b4 = tk.Button(buttonframe, text="Page 4", command=p4.lift)
 
         b1.pack(side="left")
         b2.pack(side="left")
-        b3.pack(side="left")
-        b4.pack(side="left")
+        # b3.pack(side="left")
+        # b4.pack(side="left")
 
         p1.show()
 
